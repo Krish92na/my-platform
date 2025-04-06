@@ -1,0 +1,48 @@
+name: Terraform Deploy
+
+on:
+  push:
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+
+    - name: Terraform Init
+      run: terraform init
+      working-directory: terraform/environments/dev
+
+    - name: Terraform Plan
+      run: terraform plan -out=tfplan
+      working-directory: terraform/environments/dev
+
+    - name: Terraform Apply (Manual Approval)
+      if: github.ref == 'refs/heads/main'
+      uses: trstringer/manual-approval@v1
+      with:
+        secret: ${{ secrets.GITHUB_TOKEN }}
+        approvers: krish-yourusername
+        minimum-approvals: 1
+        timeout-minutes: 15
+
+    - name: Apply
+      run: terraform apply tfplan
+      working-directory: terraform/environments/dev
