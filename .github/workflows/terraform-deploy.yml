@@ -41,7 +41,7 @@ jobs:
         secret: ${{ secrets.GITHUB_TOKEN }}
         approvers: krish-krish92na
         minimum-approvals: 1
-        timeout-minutes: 15
+        timeout-minutes:10
 
     - name: Apply
       run: terraform apply tfplan
