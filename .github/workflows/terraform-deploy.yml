@@ -39,7 +39,7 @@ jobs:
       uses: trstringer/manual-approval@v1
       with:
         secret: ${{ secrets.GITHUB_TOKEN }}
-        approvers: krish-yourusername
+        approvers: krish-krish92na
         minimum-approvals: 1
         timeout-minutes: 15
 
