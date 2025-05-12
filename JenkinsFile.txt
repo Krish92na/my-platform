@@ -1,0 +1,95 @@
+import org.jenkinsci.plugins.pipeline.modeldefination.Utils
+
+upstream = null
+nodeLabel =  'b34-openshift-l'
+
+def pyStreet = null
+
+podTemplate(cloud: 'Openshift PRO',
+            label: nodeLabel,
+            containers: [containerTemplate(image: 'jnlp')]) {
+
+     node(nodeLabel) {
+        checkout scm
+
+        checkout([$class: 'GitSCM',
+                           branches: scm.branches,
+                           doGenerateSubmoduleConfigurations: scm.doGenerateSubmoduleConfigurations,
+                           extensions: scm.extensions + [[$class: 'CloneOption', depth: 1000, noTags: false, reference: '', shallow: true]],
+                           submoduleCfg: [],
+                           userRemoteConfigs: scm.userRemoteConfigs
+                           ])
+
+        properties([
+            buildDiscarder(logRotator(numTokeepStr: '10')),
+            disableConcurrentBuilds(),
+            pipelineTriggers([
+                triggers: [
+                    [
+                        $class: 'jenkins.triggers.ReverseBuildTrigger',
+                        upstreamProjects: upstream ? "${upstream}/" + env.BRANCH_NAME.replaceAll('/', '%2F') : '',
+                        threshold: hudson.model.Result.SUCCESS
+                    ]
+                ]
+            ]),
+        ])     
+
+        python = tool name: 'Python_Latest_Version', type: 'jenkins.plugins.shiningpanda.tools.PythonInstallation'
+
+        withCredentials([
+            usernamepassword(
+                credentialsId: 'YAO_Build_User',
+                usernameVariable: 'CRED_USERNAME',
+                passwordVariable: 'CRED_PASSWORD'
+            ),
+            string(
+                credentialsId: 'YAO_Whitesource_Product_Token',
+                variable: 'WHITESOURCE_PRODUCT_TOKEN'
+            )
+        ])  {
+            configFileProvider([
+                configFile(fileID: 'condarc', replaceTokens: true, targetLocation: '.condarc', variable: 'CONDARC'),
+                configFile(fileID: 'pip.ini', replaceTokens: true, targetLocation: '.pip.ini', variable: 'PIP_CONFIG_FILE'),
+                configFile(fileID: 'pypirc', replaceTokens: true, targetLocation: '.condarc', variable: 'PYPI_CONFIG_FILE'),
+                configFile(fileID: 'netrc', replaceTokens: true, targetLocation: '.netrc', variable: 'NETRC_CONFIG_FILE'),
+            ])  {
+                withEnv([
+                    'CONDA_ENV=conda',
+                    "CONDA_PREFIX=${env.WORKSPACE}/conda",
+                    "PATH+PYTHON=$python/bin",
+                    "HOME=${env.WORKSPACE}",
+                ]) {
+                    try {
+
+                        stage('pre-build') {
+                            sh '''
+                            python --version
+                            python -m pip install -i https://anexus3.abc.be:3087/nexus/repository/yao-python/simple mypy-boto3-codepipeline==1.28.16
+                            python -m pip install -i https://anexus3.abc.be:3087/nexus/repository/yao-python/simple abc-eddi==0.31.0
+                            python -m pip freeze
+                            '''
+                        }
+
+                        stage('build') {
+                            sh '''
+                                pushd datalake-config && python -m abc_eddi.main config validate
+                                popd
+                            '''    
+                        }
+                    }
+                    finally {
+                        stage('archive') {
+                            sh '''
+                                echo "Archiving.."
+                            '''
+
+                            archiveArtifacts artifacts: '*.xml,*.err,ws.config,requirements.txt', allowEmptyArchive: true
+                            junit testResults: '*.xml', allowEmptyResults: true
+                        }
+                    }
+                }
+
+            }
+        }            
+     }          
+}
